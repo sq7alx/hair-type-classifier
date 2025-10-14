@@ -1,0 +1,17 @@
+# Python files
+*.pyc
+__pycache__/
+
+# Virtual environment
+venv/
+.env
+
+# Data
+dataset/raw/*
+!dataset/raw/.gitkeep
+
+dataset/processed/*
+!dataset/processed/.gitkeep
+
+dataset/split/*
+!dataset/split/.gitkeep
