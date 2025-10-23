@@ -1,3 +1,8 @@
+import sys
+import os
+import argparse
+import subprocess
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
@@ -5,8 +10,8 @@ from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 
-from data_preprocessing import preprocess_image
-from data_augmentation import train_transforms, val_test_transforms
+from data.data_preprocessing import preprocess_image
+from data.data_augmentation import train_transforms, val_test_transforms
 
 
 class ImageDataset(Dataset):
@@ -20,6 +25,7 @@ class ImageDataset(Dataset):
         transform (callable, optional): Transform to apply to images
         use_subclass (bool): If True, use subclass as labels (9 classes). If False, use class (3 classes)
     """
+    
     
     def __init__(self, csv_path, root_dir, split, transform=None, use_subclass=True):
         self.df = pd.read_csv(csv_path)
@@ -83,6 +89,9 @@ def create_dataloaders(csv_path, root_dir, batch_size=32, num_workers=4, use_sub
     Returns:
         tuple: (train_loader, val_loader, test_loader)
     """
+    if not os.path.exists(csv_path):
+        print(f"Data folder does not exist: {root_dir}. Please run the data cleaning first.")
+        return None, None, None
     
     train_dataset = ImageDataset(csv_path, root_dir, 'train', transform=train_transforms, use_subclass=use_subclass)
     val_dataset = ImageDataset(csv_path, root_dir, 'val', transform=val_test_transforms, use_subclass=use_subclass)
@@ -107,14 +116,45 @@ def create_dataloaders(csv_path, root_dir, batch_size=32, num_workers=4, use_sub
     
     return train_loader, val_loader, test_loader
 
+def run_pipeline():
+    parser = argparse.ArgumentParser(description="Run full data pipeline")
+    parser.add_argument('--skip_cleaning', action='store_true', help='Skip data cleaning step')
+    parser.add_argument('--skip_splitting', action='store_true', help='Skip data splitting step')
+    parser.add_argument('--skip_preprocessing', action='store_true', help='Skip data preprocessing step')
+    parser.add_argument('--skip_augmentation', action='store_true', help='Skip data augmentation step')
+    args, unknown = parser.parse_known_args()
+    
+    stages = [
+        ("Data Cleaning", not args.skip_cleaning, "src/data/data_cleaning.py"),
+        ("Data Splitting", not args.skip_splitting, "src/data/data_split.py"),
+        ("Preprocessing", not args.skip_preprocessing, "src/data/data_preprocessing.py"),
+        ("Augmentation", not args.skip_augmentation, "src/data/data_augmentation.py"),
+    ]
+    
+    print("-"*10)
+    print("Running Data Pipeline")
+    print("-"*10)
+    
+    for stage_name, to_run, script_path in stages:
+        if to_run:
+            print(f"\nStarting stage: {stage_name}")
+            result = subprocess.run([sys.executable, script_path], capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"Error in stage: {stage_name}")
+                print(result.stderr)
+                return
+            else:
+                print(f"Completed stage: {stage_name}")
+        else:
+            print(f"\nSkipping stage: {stage_name}")
 
 if __name__ == "__main__":
     csv_path = "dataset/split/dataset_split.csv"
     root_dir = "dataset/cleaned"
     
-    print("\n" + "-"*5)
+    print("\n" + "-"*10)
     print("Creating DataLoaders...")
-    print("-"*5)
+    print("-"*10)
     
     # Use use_subclass=True for 9 classes (1a, 1b, 1c, 2a, 2b, 2c, 3a, 3b, 3c)
     # Use use_subclass=False for 3 classes (1, 2, 3)
@@ -126,7 +166,7 @@ if __name__ == "__main__":
     print(f"Val batches: {len(val_loader)}")
     print(f"Test batches: {len(test_loader)}")
     
-    print("\n" + "-"*5)
+    print("\n" + "-"*10)
     print("Testing batch loading with progress bar...")
     print("="*60)
     
@@ -139,9 +179,9 @@ if __name__ == "__main__":
     print(f"   Labels: {labels.tolist()}")
     
     # Test full epoch
-    print("\n" + "-"*5)
+    print("\n" + "-"*10)
     print("Simulating one training epoch...")
-    print("-"*5)
+    print("-"*10)
     
     total_samples = 0
     for images, labels in tqdm(train_loader, desc="Training", unit="batch"):
@@ -152,9 +192,9 @@ if __name__ == "__main__":
     print(f"\nEpoch complete. Processed {total_samples} images")
     
     # Class distribution
-    print("\n" + "-"*5)
+    print("\n" + "-"*10)
     print("Class distribution:")
-    print("-"*5)
+    print("-"*10)
     
     for split_name, loader in [("TRAIN", train_loader), ("VAL", val_loader), ("TEST", test_loader)]:
         counts = loader.dataset.get_class_counts()
@@ -163,6 +203,6 @@ if __name__ == "__main__":
         for cls, count in sorted(counts.items()):
             print(f"  {cls}: {count:3d} images ({count/total*100:.1f}%)")
     
-    print("\n" + "-"*5)
+    print("\n" + "-"*10)
     print("All tests passed - DataLoader ready for training")
-    print("-"*5)
+    print("-"*10)
