@@ -1,10 +1,12 @@
-from PIL import Image
 import os
+import sys
+import yaml
+from PIL import Image
+from pathlib import Path
 
-input_dir = "dataset/split"
-#output_dir = "dataset/processed"
+from config.config_loader import CONFIG
 
-TARGET_SIZE = (224, 224)
+TARGET_SIZE = (CONFIG['dataset']['target_size_w'], CONFIG['dataset']['target_size_h'])
 
 valid_extensions = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.webp'}
 ignore_files = [".gitkeep"]
@@ -32,4 +34,5 @@ def preprocess_image(input_path, target_size=TARGET_SIZE):
 
 if __name__ == "__main__":
     print("\nPreprocessing module ready.")
+    print(f"Target size set: {TARGET_SIZE}")
     print("Usage: from data_preprocessing import preprocess_image")

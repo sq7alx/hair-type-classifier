@@ -1,12 +1,17 @@
-from torchvision import transforms
+import sys
 import random
+import yaml
+from torchvision import transforms
 from PIL import Image, ImageEnhance
+from pathlib import Path
 
-# Mean and Std for ImageNet (standard normalization)
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD  = [0.229, 0.224, 0.225]
+from config.config_loader import CONFIG
 
-# CUSTOM TRANSFORMS
+# mean and std for ImageNet
+IMAGENET_MEAN = CONFIG['augmentation']['imagenet_mean']
+IMAGENET_STD  = CONFIG['augmentation']['imagenet_std']
+
+# custom transforms
 class RandomRotate90:
     """Rotate the image by 90, 180, or 270 degrees randomly"""
     def __call__(self, img):
@@ -33,7 +38,7 @@ class RandomExposure:
         adjustment = 1.0 + random.uniform(-self.factor, self.factor)
         return enhancer.enhance(adjustment)
 
-# TRAINING AUGMENTATIONS
+# training augmentations
 train_transforms = transforms.Compose([
     transforms.RandomHorizontalFlip(p=0.5),
     RandomVerticalFlip(p=0.5),
@@ -47,7 +52,7 @@ train_transforms = transforms.Compose([
 ])
 
 
-# VALIDATION / TEST AUGMENTATIONS
+# validation / test augmentations
 val_test_transforms = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)

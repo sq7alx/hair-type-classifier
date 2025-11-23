@@ -1,26 +1,31 @@
 import os
+import sys
 import re
+import yaml
 import time
 import shutil
 import hashlib
-from threading import Lock
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import numpy as np
 import pandas as pd
+
+from threading import Lock
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
+from pathlib import Path
+
+from config.config_loader import CONFIG
 
 start_time = time.time()
 
-# Directories
-input_dir = "dataset/raw"
-output_dir = "dataset/cleaned"
-temp_bin_dir = "dataset/temp_bin" # for analysing removed files
-metadata_path = os.path.join(output_dir, "metadata.csv")
+# Directories and Parameters
+input_dir = CONFIG['dataset']['raw_input_dir']
+output_dir = CONFIG['dataset']['cleaned_output_dir']
+temp_bin_dir = CONFIG['dataset']['temp_bin_dir']
+metadata_path = os.path.join(output_dir, CONFIG['dataset']['metadata_filename'])
+MIN_SIZE = CONFIG['dataset']['min_image_size']
+MAX_WORKERS = CONFIG['dataset']['max_workers']
 
 valid_extensions = (".jpg", ".jpeg", ".bmp", ".tiff", ".gif", ".webp", ".heic", ".png")
-MIN_SIZE = 32
-MAX_WORKERS = 4 # Adjust based on your CPU
 
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(temp_bin_dir, exist_ok=True)

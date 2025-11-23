@@ -1,15 +1,20 @@
 import os
+import sys
 import csv
 import random
+import yaml
+from pathlib import Path
 
-input_dir = "dataset/cleaned"
-output_csv = "dataset/split/dataset_split.csv"
+from config.config_loader import CONFIG
+
+input_dir = CONFIG['dataset']['cleaned_output_dir']
+output_csv = CONFIG['dataset']['split_output_csv']
+splits = CONFIG['dataset']['splits']
 
 random.seed(1984)
 
 os.makedirs(os.path.dirname(output_csv), exist_ok=True)
 
-splits = {"train": 0.7, "val": 0.15, "test": 0.15}
 total_splits = sum(splits.values())
 
 if total_splits != 1.0:

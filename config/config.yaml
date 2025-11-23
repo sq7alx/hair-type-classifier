@@ -1,0 +1,28 @@
+dataset:
+  raw_input_dir: "dataset/raw"
+  cleaned_output_dir: "dataset/cleaned"
+  split_output_csv: "dataset/split/dataset_split.csv"
+  temp_bin_dir: "dataset/temp_bin"
+  metadata_filename: "metadata.csv"
+  
+  # image sizes
+  target_size_w: 224
+  target_size_h: 224
+  min_image_size: 32
+  max_workers: 4
+
+  # data split
+  splits:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+
+
+augmentation:
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+
+defaults:
+  batch_size: 16
+  num_workers: 2
+  use_subclass: true

@@ -1,11 +1,12 @@
-import sys
 import os
+import sys
 import argparse
 import subprocess
 import shutil
 import logging
 import torch
 import pandas as pd
+import yaml
 
 from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
@@ -13,34 +14,33 @@ from PIL import Image
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from data.data_preprocessing import preprocess_image
-from data.data_augmentation import train_transforms, val_test_transforms
+from src.data.data_preprocessing import preprocess_image
+from src.data.data_augmentation import train_transforms, val_test_transforms
 
+from config.logging_config import get_logger, setup_logger
 
-def setup_logger(name='data_loader', level=logging.INFO):
-    """Configure logger with console handler."""
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    
-    if logger.handlers:
-        return logger
-    
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
-    
+setup_logger(
+    name="hair_type_classifier",
+    level=logging.INFO,
+    log_file="logs/data_pipeline.log",
+    console=True,
+    file=True
+)
 
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    console_handler.setFormatter(formatter)
-    
-    logger.addHandler(console_handler)
-    return logger
+logger = get_logger(__name__)
 
-
-logger = setup_logger()
-
+def load_config(config_path="config/config.yaml"):
+    config_file = Path(config_path)
+    if not config_file.exists():
+        raise FileNotFoundError(f"Configuration file not found at: {config_file}")
+    with open(config_file, "r") as f:
+        return yaml.safe_load(f)
+try:
+    CONFIG = load_config()
+    logger.info("Configuration loaded successfully")
+except FileNotFoundError as e:
+    logger.error(e)
+    sys.exit(1)
 
 class ImageDataset(Dataset):
     """
@@ -53,7 +53,6 @@ class ImageDataset(Dataset):
         transform (callable, optional): Transform to apply to images
         use_subclass (bool): If True, use subclass as labels (9 classes). If False, use class (3 classes)
     """
-    
     
     def __init__(self, csv_path, root_dir, split, transform=None, use_subclass=True):
         self.df = pd.read_csv(csv_path)
@@ -104,20 +103,13 @@ class ImageDataset(Dataset):
         return {cls: len(self.df[self.df[key] == cls]) for cls in self.classes}
 
 
-def create_dataloaders(csv_path, root_dir, batch_size=32, num_workers=4, use_subclass=True):
+def create_dataloaders(batch_size, num_workers, use_subclass=True):
     """
     Create train, val, and test DataLoaders.
-    
-    Args:
-        csv_path (str): Path to dataset CSV
-        root_dir (str): Path to images directory
-        batch_size (int): Batch size
-        num_workers (int): Number of worker processes
-        use_subclass (bool): If True, use subclass as labels (9 classes). If False, use class (3 classes)
-        
-    Returns:
-        tuple: (train_loader, val_loader, test_loader)
     """
+    csv_path = CONFIG['dataset']['split_output_csv']
+    root_dir = CONFIG['dataset']['cleaned_output_dir']
+    
     Path(root_dir).mkdir(parents=True, exist_ok=True)
     Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
     
@@ -160,8 +152,8 @@ class PipelineManager:
 
     def __init__(self, args):
         self.args = args
-        self.cleaned_dir = Path("dataset/cleaned")
-        self.split_csv = Path("dataset/split/dataset_split.csv")
+        self.cleaned_dir = Path(CONFIG['dataset']['cleaned_output_dir'])
+        self.split_csv = Path(CONFIG['dataset']['split_output_csv'])
 
         self.stages = [
             ("Data Cleaning", not args.skip_cleaning, "src/data/data_cleaning.py"),
@@ -295,7 +287,10 @@ def run_pipeline():
                        help='Set logging level')
     args = parser.parse_args()
 
-    logger.setLevel(getattr(logging, args.log_level))
+    # log level setup
+    main_logger = logging.getLogger("hair_type_classifier")
+    main_logger.setLevel(getattr(logging, args.log_level))
+    logger.info(f"Log level set to: {args.log_level}")
 
     pm = PipelineManager(args)
     pm.validate_inputs()
@@ -307,22 +302,18 @@ def run_pipeline():
 if __name__ == "__main__":
     args = run_pipeline()
 
-    # build DataLoaders
-    csv_path = "dataset/split/dataset_split.csv"
-    root_dir = "dataset/cleaned"
+    batch_size_conf = CONFIG['defaults']['batch_size']
+    num_workers_conf = CONFIG['defaults']['num_workers']
+    use_subclass_conf = CONFIG['defaults']['use_subclass']
     
     logger.info("=" * 60)
     logger.info("Creating DataLoaders...")
     logger.info("=" * 60)
 
-    # Use use_subclass=True for 9 classes (1a, 1b, 1c, 2a, 2b, 2c, 3a, 3b, 3c)
-    # Use use_subclass=False for 3 classes (1, 2, 3)
     loaders = create_dataloaders(
-        csv_path=csv_path,
-        root_dir=root_dir,
-        batch_size=16,
-        num_workers=2,
-        use_subclass=True
+        batch_size=batch_size_conf,
+        num_workers=num_workers_conf,
+        use_subclass=use_subclass_conf
     )
 
     train_loader, val_loader, test_loader = loaders
