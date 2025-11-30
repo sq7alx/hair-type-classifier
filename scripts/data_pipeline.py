@@ -13,7 +13,8 @@ from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 from src.data.data_preprocessing import preprocess_image
 from src.data.data_augmentation import train_transforms, val_test_transforms
 
@@ -108,7 +109,7 @@ def create_dataloaders(batch_size, num_workers, use_subclass=True):
     Create train, val, and test DataLoaders.
     """
     csv_path = CONFIG['dataset']['split_output_csv']
-    root_dir = CONFIG['dataset']['cleaned_output_dir']
+    root_dir = CONFIG['dataset']['raw_input_dir']
     
     Path(root_dir).mkdir(parents=True, exist_ok=True)
     Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
@@ -216,7 +217,7 @@ class PipelineManager:
                 continue
 
             logger.info(f"[STAGE] Starting: {name}")
-            result = subprocess.run([sys.executable, script], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, script], check=True)
 
             if result.returncode != 0:
                 logger.error(f"Stage failed: {name}")

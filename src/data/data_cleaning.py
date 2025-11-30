@@ -7,40 +7,50 @@ import shutil
 import hashlib
 import numpy as np
 import pandas as pd
+import logging
 
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 from pathlib import Path
 
-from config.config_loader import CONFIG
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
+from config.config_loader import CONFIG
+from config.logging_config import get_logger, setup_logger
+
+setup_logger(
+    name="hair_type_classifier",
+    level=logging.INFO,
+    log_file="logs/data_cleaning.log",
+    console=True,
+    file=True
+)
+logger = get_logger("hair_type_classifier")
 start_time = time.time()
 
 # Directories and Parameters
 input_dir = CONFIG['dataset']['raw_input_dir']
 output_dir = CONFIG['dataset']['cleaned_output_dir']
-temp_bin_dir = CONFIG['dataset']['temp_bin_dir']
-metadata_path = os.path.join(output_dir, CONFIG['dataset']['metadata_filename'])
+metadata_path = os.path.join(output_dir, CONFIG['dataset']['cleaned_output_csv'])
 MIN_SIZE = CONFIG['dataset']['min_image_size']
 MAX_WORKERS = CONFIG['dataset']['max_workers']
 
 valid_extensions = (".jpg", ".jpeg", ".bmp", ".tiff", ".gif", ".webp", ".heic", ".png")
 
 os.makedirs(output_dir, exist_ok=True)
-os.makedirs(temp_bin_dir, exist_ok=True)
 
 hashes = {}  # for duplicates
 hashes_lock = Lock()
 
 stats = {
     'total': 0,
-    'saved': 0,
+    'kept': 0,
     'too_small': 0,
     'single_color': 0,
     'duplicates': 0,
-    'errors': 0,
-    'replaced': 0
+    'errors': 0
 }
 
 stats_lock = Lock()
@@ -50,9 +60,6 @@ duplicate_files_lock = Lock()
 
 metadata_records = []
 metadata_lock = Lock()
-
-# format check (if e.g. 1a-1.png)
-pattern = re.compile(r'^([a-zA-Z0-9_]+)-\d+\.(jpg|jpeg|bmp|tiff|gif|webp|heic|png)$', re.IGNORECASE)
 
 def update_stats(key: str, value: int = 1):
     """Thread-safe update for stats"""
@@ -79,7 +86,7 @@ def is_single_color(img):
     return False
 
 def validate_image(path):
-    """Validate an image file to determine whether it should be kept, skipped, or marked as duplicate."""
+    """Validate an image file to determine whether it should be kept or skipped."""
     try:
         with Image.open(path) as img:
             img.verify()
@@ -96,15 +103,12 @@ def validate_image(path):
             return "ok", phash
     except Exception as e:
         update_stats('errors')
-        print(f"Error validating {path}: {e}")
+        logger.warning(f"Error validating {path}: {e}")
         return "error", None
 
-
-def process_image(filename, subfolder_input_path, subfolder_output_path, current_class_name, current_subclass_name, counter):
-    input_path = os.path.join(subfolder_input_path, filename)
-    
+def process_image(filepath, current_class_name, current_subclass_name):
     update_stats('total')
-    status, phash = validate_image(input_path)
+    status, phash = validate_image(filepath)
     
     if status != "ok":
         return None
@@ -113,37 +117,27 @@ def process_image(filename, subfolder_input_path, subfolder_output_path, current
         if phash in hashes:
             original = hashes[phash]
             with duplicate_files_lock:
-                duplicate_files.append((input_path, original))
+                duplicate_files.append((filepath, original))
             update_stats('duplicates')
             return None
-        hashes[phash] = input_path
+        hashes[phash] = filepath
     
-    ext = os.path.splitext(filename)[1].lower()
-    output_filename = f"{current_subclass_name}-{counter}{ext}"
-    output_path = os.path.join(subfolder_output_path, output_filename)
-    
-    try:
-        with Image.open(input_path) as img:
-            img = img.convert("RGB")
-            img.save(output_path)
-            update_stats('saved')
+    with Image.open(filepath) as img:
+        img = img.convert("RGB")
+        update_stats('kept')
 
-            with metadata_lock:
-                metadata_records.append({
-                    "class": current_class_name,
-                    "subclass": current_subclass_name,
-                    "filename": output_filename,
-                    "hash": phash,
-                    "width": img.width,
-                    "height": img.height,
-                    "path": os.path.relpath(output_path, output_dir)
-                })
+        with metadata_lock:
+            metadata_records.append({
+                "class": current_class_name,
+                "subclass": current_subclass_name,
+                "filename": os.path.basename(filepath),
+                "hash": phash,
+                "width": img.width,
+                "height": img.height,
+                "path": os.path.relpath(filepath, input_dir)
+            })
 
-        return output_filename
-    except Exception as e:
-        update_stats('errors')
-        print(f"Error saving {input_path}: {e}")
-        return None
+    return filepath
 
 for class_name in os.listdir(input_dir): #1/2/3
     class_path = os.path.join(input_dir, class_name)
@@ -155,69 +149,41 @@ for class_name in os.listdir(input_dir): #1/2/3
         if not os.path.isdir(subfolder_input_path):
             continue
 
-        subfolder_output_path = os.path.join(output_dir, class_name, subclass_name)
-        os.makedirs(subfolder_output_path, exist_ok=True)
-
-        # move old files in /cleaned not presented in /raw to /temp_bin
-        cleaned_files = os.listdir(subfolder_output_path)
-        raw_files = set(os.listdir(subfolder_input_path))
-        for f in cleaned_files:
-            if f not in raw_files:
-                src_path = os.path.join(subfolder_output_path, f)
-                relative_path = os.path.relpath(src_path, output_dir)
-                dst_path = os.path.join(temp_bin_dir, relative_path)
-                os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                shutil.move(src_path, dst_path)
-                print(f"Moved file to temp_bin: {dst_path}")
-                
-
-        # find max counter for subfolder and add new
-        max_counter = 0
-        for f in os.listdir(subfolder_output_path):
-            match = pattern.match(f)
-            if match:
-                try:
-                    counter = int(f.rsplit('-', 1)[1].rsplit('.', 1)[0])
-                    if counter > max_counter:
-                        max_counter = counter
-                except:
-                    pass
-        counter = max_counter + 1
-
-        print(f"Starting counter for {class_name}/{subclass_name} at: {counter}")
+        logger.info(f"Cleaning {class_name}/{subclass_name}")
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = []
             for filename in os.listdir(subfolder_input_path):
                 if not filename.lower().endswith(valid_extensions):
                     continue
-                futures.append(executor.submit(process_image, filename, subfolder_input_path, subfolder_output_path, class_name, subclass_name, counter))
-                counter += 1
+                filepath = os.path.join(subfolder_input_path, filename)
+                futures.append(executor.submit(process_image, filepath, class_name, subclass_name))
 
             for f in as_completed(futures):
                 result = f.result()
                 if result:
-                    print(f"Saved: {os.path.join(subfolder_output_path, result)}")
+                    logger.debug(f"Kept: {result}")
 
 # save metadata
 if metadata_records:
     df = pd.DataFrame(metadata_records)
     df.to_csv(metadata_path, index=False)
-    print(f"\nMetadata saved to {metadata_path}")
+    logger.info(f"Metadata saved to {metadata_path}")
+
 
 end_time = time.time()
 elapsed_time = end_time - start_time
 
 # Summary
-print("\nCleaning Summary:")
+logger.info("\nCleaning Summary:") 
 for key, value in stats.items():
-    print(f"{key}: {value}")
+    logger.info(f"{key}: {value}")
 
 if duplicate_files:
-    print("\nDuplicate files detected:")
+    logger.info("\nDuplicate files detected:")
     for dup, original in duplicate_files:
-        print(f" - {dup} (same as {original})")
+        logger.info(f" - {dup} (same as {original})")
 else:
-    print("\nNo duplicate files detected.")
+    logger.info("\nNo duplicate files detected.")
 
-print(f"\nProcessing time: {elapsed_time:.2f} seconds")
+logger.info(f"\nCleaning time: {elapsed_time:.2f} seconds")

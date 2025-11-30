@@ -1,8 +1,8 @@
 dataset:
   raw_input_dir: "dataset/raw"
   cleaned_output_dir: "dataset/cleaned"
+  cleaned_output_csv: "dataset_cleaned.csv"
   split_output_csv: "dataset/split/dataset_split.csv"
-  temp_bin_dir: "dataset/temp_bin"
   metadata_filename: "metadata.csv"
   
   # image sizes
