@@ -1,0 +1,22 @@
+2025-11-30 21:49:19 - hair_type_classifier - INFO - Processing 1_straight/1a
+2025-11-30 21:49:22 - hair_type_classifier - INFO - Processing 1_straight/1b
+2025-11-30 21:49:24 - hair_type_classifier - INFO - Processing 1_straight/1c
+2025-11-30 21:49:27 - hair_type_classifier - INFO - Processing 2_wavy/2a
+2025-11-30 21:49:30 - hair_type_classifier - INFO - Processing 2_wavy/2b
+2025-11-30 21:49:32 - hair_type_classifier - INFO - Processing 2_wavy/2c
+2025-11-30 21:49:34 - hair_type_classifier - INFO - Processing 3_curly/3a
+2025-11-30 21:49:36 - hair_type_classifier - INFO - Processing 3_curly/3b
+2025-11-30 21:49:38 - hair_type_classifier - INFO - Processing 3_curly/3c
+2025-11-30 21:49:40 - hair_type_classifier - INFO - Metadata saved to dataset/cleaned\dataset_cleaned.csv
+2025-11-30 21:49:40 - hair_type_classifier - INFO - 
+Cleaning Summary:
+2025-11-30 21:49:40 - hair_type_classifier - INFO - total: 759
+2025-11-30 21:49:40 - hair_type_classifier - INFO - kept: 744
+2025-11-30 21:49:40 - hair_type_classifier - INFO - too_small: 0
+2025-11-30 21:49:40 - hair_type_classifier - INFO - single_color: 2
+2025-11-30 21:49:40 - hair_type_classifier - INFO - duplicates: 13
+2025-11-30 21:49:40 - hair_type_classifier - INFO - errors: 0
+2025-11-30 21:49:40 - hair_type_classifier - INFO - 
+Duplicate files detected:
+2025-11-30 21:49:40 - hair_type_classifier - INFO -  - dataset/raw\1_straight\1a\ab0c3995457486a96c21392109ace82e.jpg (same as dataset/raw\1_straight\1a\1a-56.png)
+Processing time: 21.20 seconds
