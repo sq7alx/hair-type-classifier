@@ -6,13 +6,20 @@ import logging
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import yaml
 from pathlib import Path
 from torch.utils.data import DataLoader
 from torchvision import datasets, models, transforms
 from tqdm import tqdm
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from data.run_pipeline import create_dataloaders
+    
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+from scripts.data_pipeline import create_dataloaders
+from config.config_loader import CONFIG
+
+DEFAULT_CSV_PATH = CONFIG['dataset']['split_output_csv']
+DEFAULT_ROOT_DIR = CONFIG['dataset']['raw_input_dir']
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,12 +27,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a computer vision classification model")
+
     
-    parser.add_argument("--csv-path", type=str, default="dataset/split/dataset_split.csv", help="Path to dataset CSV file (default: dataset/split/dataset_split.csv)")
-    parser.add_argument("--root-dir", type=str, default="dataset/cleaned", help="Path to dataset root directory (default: dataset/cleaned)")
-    parser.add_argument("--use-subclass", action="store_true", help="Use subclass labels (9 classes) instead of main class (3 classes)")
+    parser.add_argument("--csv-path", type=str, default=DEFAULT_CSV_PATH, help=f"Path to dataset CSV file (default: {DEFAULT_CSV_PATH})")
+    parser.add_argument("--root-dir", type=str, default=DEFAULT_ROOT_DIR, help=f"Path to dataset root directory (default: {DEFAULT_ROOT_DIR})")
     parser.add_argument("--arch", type=str, default="resnet18", choices=["resnet18", "resnet34", "resnet50"])
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -35,6 +43,7 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--freeze-backbone", action="store_true", help="Freeze pretrained backbone except final layer")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--patience", type=int, default=5, help="Number of epochs to wait before early stopping.")
     return parser.parse_args()
 
 def get_model(arch, num_classes, freeze_backbone=False):
@@ -127,15 +136,32 @@ def main():
         return
     
     logger.info("Loading datasets")
-    logger.info(f"CSV path: {args.csv_path}")
-    logger.info(f"Root directory: {args.root_dir}")
+    
+    if args.csv_path == DEFAULT_CSV_PATH:
+        logger.info(f"CSV path: {args.csv_path} (Using default value)")
+    else:
+        logger.info(f"CSV path: {args.csv_path} (Custom value provided)")
+
+    if args.root_dir == DEFAULT_ROOT_DIR:
+        logger.info(f"Root directory: {args.root_dir} (Using default value)")
+    else:
+        logger.info(f"Root directory: {args.root_dir} (Custom value provided)")
+
+    if not os.path.exists(args.csv_path) or not os.path.exists(args.root_dir):
+        logger.error("Dataset not found")
+        
+        if not os.path.exists(args.csv_path):
+            logger.error(f"Missing CSV file: {args.csv_path}")
+            
+        if not os.path.exists(args.root_dir):
+            logger.error(f"Missing root directory: {args.root_dir}")
+            
+        logger.error("Please run  'scripts/data_pipeline.py' first to prepare the dataset")
+        return
 
     train_loader, val_loader, test_loader = create_dataloaders(
-        csv_path=args.csv_path,
-        root_dir=args.root_dir,
         batch_size=args.batch_size,
         num_workers=args.workers,
-        use_subclass=args.use_subclass
     )
     
     if train_loader is None or val_loader is None or test_loader is None:
@@ -217,4 +243,8 @@ def main():
     logger.info(f"Final test accuracy: {test_acc:.2f}%")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nInterrupted by user.")
+        sys.exit(0)
