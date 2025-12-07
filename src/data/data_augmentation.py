@@ -48,10 +48,23 @@ train_transforms = transforms.Compose([
     RandomRotate90(),
     transforms.RandomRotation(degrees=23),
     
-    RandomExposure(factor=0.15),
-    
+    transforms.RandomAffine(
+        degrees=0,
+        translate=(0.05, 0.05),
+        scale=(0.95, 1.05),
+        shear=5
+    ),
+
+    transforms.ColorJitter(
+        brightness=0.2,
+        contrast=0.2,
+        saturation=0.2,
+        hue=0.05
+    ),
+
     transforms.ToTensor(),
-    transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
+    transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    transforms.RandomErasing(p=0.2, scale=(0.02, 0.2), ratio=(0.3, 3.3)) 
 ])
 
 
