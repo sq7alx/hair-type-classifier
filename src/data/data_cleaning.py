@@ -14,8 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 from pathlib import Path
 
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+# project_root = Path(__file__).parent.parent.parent
+# sys.path.insert(0, str(project_root))
 
 from config.config_loader import CONFIG
 from config.logging_config import get_logger, setup_logger
