@@ -7,14 +7,14 @@ import logging
 import torch
 import pandas as pd
 import yaml
+import numpy as np
 
+from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 from src.data.data_preprocessing import preprocess_image
 from src.data.data_augmentation import train_transforms, val_test_transforms
 
@@ -53,15 +53,18 @@ class ImageDataset(Dataset):
         split (str): One of ['train', 'val', 'test']
         transform (callable, optional): Transform to apply to images
         use_subclass (bool): If True, use subclass as labels (9 classes). If False, use class (3 classes)
+        use_masking (bool): If True, apply hair mask during preprocessing.
     """
     
-    def __init__(self, csv_path, root_dir, split, transform=None, use_subclass=True):
+    def __init__(self, csv_path, root_dir, split, transform=None, use_subclass=True, use_masking=False, mask_dir=None):
         self.df = pd.read_csv(csv_path)
         self.df = self.df[self.df['split'] == split].reset_index(drop=True)
         self.root_dir = Path(root_dir)
         self.transform = transform
         self.split = split
         self.use_subclass = use_subclass
+        self.use_masking = use_masking
+        self.mask_dir = Path(mask_dir) if mask_dir else None
         
         if use_subclass:
             self.classes = sorted(self.df['subclass'].unique())
@@ -72,7 +75,7 @@ class ImageDataset(Dataset):
             self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
             label_type = "classes"
         
-        logger.info(f"{split.upper()} dataset: {len(self.df)} images, {len(self.classes)} {label_type}")
+        logger.info(f"{split.upper()} dataset: {len(self.df)} images, {len(self.classes)} {label_type} (Masking: {use_masking})")
     
     def __len__(self):
         return len(self.df)
@@ -81,7 +84,8 @@ class ImageDataset(Dataset):
         row = self.df.iloc[idx]
         img_path = self.root_dir / row['path']
         
-        img = preprocess_image(img_path)
+        # getting use_masking for preprocess_image
+        img = preprocess_image(img_path, use_masking=self.use_masking, mask_dir=self.mask_dir)
         
         if img is None:
             logger.warning(f"Failed to load image: {img_path}, using blank image.")
@@ -90,7 +94,6 @@ class ImageDataset(Dataset):
         if self.transform:
             img = self.transform(img)
         else:
-            from torchvision import transforms
             img = transforms.ToTensor()(img)
         
         label_key = 'subclass' if self.use_subclass else 'class'
@@ -104,12 +107,13 @@ class ImageDataset(Dataset):
         return {cls: len(self.df[self.df[key] == cls]) for cls in self.classes}
 
 
-def create_dataloaders(batch_size, num_workers, use_subclass=True):
+def create_dataloaders(batch_size, num_workers, use_subclass=False, use_masking=False):
     """
     Create train, val, and test DataLoaders.
     """
     csv_path = CONFIG['dataset']['split_output_csv']
     root_dir = CONFIG['dataset']['raw_input_dir']
+    mask_dir = CONFIG['dataset']['mask_dir']
     
     Path(root_dir).mkdir(parents=True, exist_ok=True)
     Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
@@ -121,9 +125,9 @@ def create_dataloaders(batch_size, num_workers, use_subclass=True):
     logger.info(f"Loading datasets from CSV: {csv_path}")
     logger.info(f"Using root directory: {root_dir}")
     
-    train_dataset = ImageDataset(csv_path, root_dir, 'train', transform=train_transforms, use_subclass=use_subclass)
-    val_dataset = ImageDataset(csv_path, root_dir, 'val', transform=val_test_transforms, use_subclass=use_subclass)
-    test_dataset = ImageDataset(csv_path, root_dir, 'test', transform=val_test_transforms, use_subclass=use_subclass)
+    train_dataset = ImageDataset(csv_path, root_dir, 'train', transform=train_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir)
+    val_dataset = ImageDataset(csv_path, root_dir, 'val', transform=val_test_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir)
+    test_dataset = ImageDataset(csv_path, root_dir, 'test', transform=val_test_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir)
     
     pin_memory = torch.cuda.is_available()
     
@@ -252,16 +256,6 @@ def test_dataloaders(train_loader, val_loader, test_loader):
     logger.info(f"   Image range: [{images.min():.3f}, {images.max():.3f}]")
     logger.info(f"   Labels sample: {labels.tolist()}")
     
-    # test full epoch with progress bar
-    logger.info("-" * 40)
-    logger.info("Simulating one training epoch...")
-    logger.info("-" * 40)
-    
-    total_samples = 0
-    for images, labels in tqdm(train_loader, desc="Training", unit="batch"):
-        total_samples += images.size(0)
-    
-    logger.info(f"Epoch complete. Processed {total_samples} images")
     
     # class distribution
     logger.info("-" * 40)
@@ -277,6 +271,42 @@ def test_dataloaders(train_loader, val_loader, test_loader):
     
     logger.info("=" * 60)
     logger.info("All tests passed - DataLoader ready for training")
+
+# saving sample images for verification
+def save_sample_images(dataset, output_dir, count=10, prefix="processed"):
+    
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    IMAGENET_MEAN = CONFIG['augmentation']['imagenet_mean']
+    IMAGENET_STD = CONFIG['augmentation']['imagenet_std']
+    
+    mean_tensor = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+    std_tensor = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+
+    logger.info("-" * 60)
+    logger.info(f"Saving {count} sample images to: {output_path}")
+    logger.info("-" * 60)
+
+    for i in tqdm(range(min(count, len(dataset))), desc=f"Saving {prefix} samples"):
+        try:
+            image_tensor, label = dataset[i]
+            # denormalize from ImageNet back to [0, 1]
+            image_unnormalized = image_tensor * std_tensor + mean_tensor
+            image_np = image_unnormalized.permute(1, 2, 0).numpy()
+            image_np = (image_np * 255).astype(np.uint8)
+            
+            image_np = np.clip(image_np, 0, 255) 
+            img_pil = Image.fromarray(image_np)
+
+            label_name = dataset.classes[label]
+            
+            save_name = f"{prefix}_{i}_{label_name}.png"
+            img_pil.save(output_path / save_name)
+            
+        except Exception as e:
+            logger.error(f"Failed to save sample image {i}: {e}")
+            continue
 
 def run_pipeline():
     parser = argparse.ArgumentParser(description="Run full data pipeline with optional stages")
@@ -306,20 +336,37 @@ if __name__ == "__main__":
     batch_size_conf = CONFIG['defaults']['batch_size']
     num_workers_conf = CONFIG['defaults']['num_workers']
     use_subclass_conf = CONFIG['defaults']['use_subclass']
+    use_masking_conf = CONFIG['defaults'].get('use_masking', False) 
     
     logger.info("=" * 60)
     logger.info("Creating DataLoaders...")
     logger.info("=" * 60)
 
-    loaders = create_dataloaders(
-        batch_size=batch_size_conf,
-        num_workers=num_workers_conf,
-        use_subclass=use_subclass_conf
-    )
+    try:
+        loaders = create_dataloaders(
+            batch_size=batch_size_conf,
+            num_workers=num_workers_conf,
+            use_subclass=use_subclass_conf,
+            use_masking=use_masking_conf
+        )
 
-    train_loader, val_loader, test_loader = loaders
+        train_loader, val_loader, test_loader = loaders
 
-    if train_loader is not None:
         test_dataloaders(train_loader, val_loader, test_loader)
-    else:
-        logger.error("Failed to create DataLoaders. Check if data cleaning and splitting completed successfully.")
+            
+        # saving masked samples for visualisation
+        OUTPUT_FOLDER = Path("dataset/processed_samples")
+            
+        logger.info(f"Saving sample images to verify preprocessing/augmentation to {OUTPUT_FOLDER}")
+            
+        # training samples (with augmentation)
+        save_sample_images(train_loader.dataset, OUTPUT_FOLDER / "train", count=10, prefix="train_aug")  
+        # validation samples (w/o augmentation)
+        save_sample_images(val_loader.dataset, OUTPUT_FOLDER / "val", count=10, prefix="val_norm")
+        
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error during DataLoader creation: {e}")
+        sys.exit(1)
