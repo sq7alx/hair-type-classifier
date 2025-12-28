@@ -56,9 +56,15 @@ class ImageDataset(Dataset):
         use_masking (bool): If True, apply hair mask during preprocessing.
     """
     
-    def __init__(self, csv_path, root_dir, split, transform=None, use_subclass=True, use_masking=False, mask_dir=None):
+    def __init__(self, csv_path, root_dir, split, transform=None, use_subclass=True, use_masking=False, mask_dir=None, parent_class=None):
         self.df = pd.read_csv(csv_path)
-        self.df = self.df[self.df['split'] == split].reset_index(drop=True)
+        self.df = self.df[self.df['split'] == split]
+        if parent_class is not None:
+            prefix = str(parent_class)
+            self.df = self.df[self.df['class'].astype(str).str.startswith(prefix)]
+        
+        
+        self.df = self.df.reset_index(drop=True)
         self.root_dir = Path(root_dir)
         self.transform = transform
         self.split = split
@@ -107,7 +113,7 @@ class ImageDataset(Dataset):
         return {cls: len(self.df[self.df[key] == cls]) for cls in self.classes}
 
 
-def create_dataloaders(batch_size, num_workers, use_subclass=False, use_masking=False):
+def create_dataloaders(batch_size, num_workers, use_subclass=False, use_masking=False, parent_class=None):
     """
     Create train, val, and test DataLoaders.
     """
@@ -125,9 +131,12 @@ def create_dataloaders(batch_size, num_workers, use_subclass=False, use_masking=
     logger.info(f"Loading datasets from CSV: {csv_path}")
     logger.info(f"Using root directory: {root_dir}")
     
-    train_dataset = ImageDataset(csv_path, root_dir, 'train', transform=train_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir)
-    val_dataset = ImageDataset(csv_path, root_dir, 'val', transform=val_test_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir)
-    test_dataset = ImageDataset(csv_path, root_dir, 'test', transform=val_test_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir)
+    if parent_class:
+        logger.info(f"Applying Filter: Only parent_class {parent_class}")
+        
+    train_dataset = ImageDataset(csv_path, root_dir, 'train', transform=train_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir, parent_class=parent_class)
+    val_dataset = ImageDataset(csv_path, root_dir, 'val', transform=val_test_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir, parent_class=parent_class)
+    test_dataset = ImageDataset(csv_path, root_dir, 'test', transform=val_test_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir, parent_class=parent_class)
     
     pin_memory = torch.cuda.is_available()
     
