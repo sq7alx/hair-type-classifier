@@ -160,7 +160,7 @@ def main():
         default_output_dir = os.path.join(args.output, f"h{target_type_filter}_subclass")
         logger.info(f"Mode {run_mode} - Level 1 (H{target_type_filter} model with subclasses a/b/c)")
     
-    os.makedirs(args.output, exist_ok=True)
+    os.makedirs(default_output_dir, exist_ok=True)
     
     train_loader, val_loader, test_loader = create_dataloaders(
         batch_size=args.batch_size,
@@ -231,11 +231,11 @@ def main():
     # test evaluation
     logger.info("\nEvaluating on test set...")
     filename = f"best_model_{args.arch}_{run_mode}.pth"
-    best_model_path = os.path.join(args.output, filename)
+    best_model_path = os.path.join(default_output_dir, filename)
     
     if os.path.exists(best_model_path):
         
-        checkpoint = torch.load(best_model_path)
+        checkpoint = torch.load(best_model_path, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
     
