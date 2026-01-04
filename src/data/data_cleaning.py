@@ -1,7 +1,4 @@
 import os
-import sys
-import re
-import yaml
 import time
 import shutil
 import hashlib
@@ -12,7 +9,6 @@ import logging
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
-from pathlib import Path
 
 # project_root = Path(__file__).parent.parent.parent
 # sys.path.insert(0, str(project_root))
@@ -103,7 +99,7 @@ def validate_image(path):
             return "ok", phash
     except Exception as e:
         update_stats('errors')
-        logger.warning(f"Error validating {path}: {e}")
+        logger.warning(f"[CLEANING] Failed to validate image: {path} | {e}")
         return "error", None
 
 def process_image(filepath, current_class_name, current_subclass_name):
@@ -139,6 +135,12 @@ def process_image(filepath, current_class_name, current_subclass_name):
 
     return filepath
 
+logger.info("[CLEANING] Started")
+logger.info(f"[CLEANING] Input directory: {input_dir}")
+logger.info(f"[CLEANING] Output directory: {output_dir}")
+logger.info(f"[CLEANING] Min image size: {MIN_SIZE}")
+logger.info(f"[CLEANING] Workers: {MAX_WORKERS}")
+
 for class_name in os.listdir(input_dir): #1/2/3
     class_path = os.path.join(input_dir, class_name)
     if not os.path.isdir(class_path):
@@ -149,7 +151,7 @@ for class_name in os.listdir(input_dir): #1/2/3
         if not os.path.isdir(subfolder_input_path):
             continue
 
-        logger.info(f"Cleaning {class_name}/{subclass_name}")
+        logger.info(f"[CLEANING] Cleaning {class_name}/{subclass_name}")
         
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = []
@@ -162,28 +164,29 @@ for class_name in os.listdir(input_dir): #1/2/3
             for f in as_completed(futures):
                 result = f.result()
                 if result:
-                    logger.debug(f"Kept: {result}")
+                    logger.debug(f"[CLEANING] Kept: {result}")
 
 # save metadata
 if metadata_records:
     df = pd.DataFrame(metadata_records)
     df.to_csv(metadata_path, index=False)
-    logger.info(f"Metadata saved to {metadata_path}")
+    logger.info(f"[CLEANING] Metadata saved to {metadata_path}")
 
 
 end_time = time.time()
 elapsed_time = end_time - start_time
 
 # Summary
-logger.info("\nCleaning Summary:") 
+logger.info("[CLEANING] Summary:")
+total = stats['total'] if stats['total'] > 0 else 1
 for key, value in stats.items():
-    logger.info(f"{key}: {value}")
+    logger.info(f"[CLEANING] {key}: {value} ({value/total*100:.1f}%)")
 
 if duplicate_files:
-    logger.info("\nDuplicate files detected:")
+    logger.warning("\n[CLEANING] Duplicate files detected:")
     for dup, original in duplicate_files:
-        logger.info(f" - {dup} (same as {original})")
+        logger.info(f"[CLEANING] - {dup} (same as {original})")
 else:
-    logger.info("\nNo duplicate files detected.")
+    logger.info("\n[CLEANING]No duplicate files detected.")
 
-logger.info(f"\nCleaning time: {elapsed_time:.2f} seconds")
+logger.info(f"\n[CLEANING] Cleaning time: {elapsed_time:.2f} seconds")

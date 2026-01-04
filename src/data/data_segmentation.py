@@ -64,13 +64,13 @@ def post_process_mask(mask_np):
 
 def run_bisenet():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info(f"Loading BiSeNet model to {device}")
+    logger.info(f"[SEGMENTATION] Loading BiSeNet model to {device}")
 
     try:
         net = BiSeNet(n_classes=19)
         net.load_state_dict(torch.load(BISE_MODEL_PATH, map_location=device))
     except FileNotFoundError:
-        logger.error(f"Model weights not found: {BISE_MODEL_PATH}")
+        logger.info(f"[SEGMENTATION] Model weights not found: {BISE_MODEL_PATH}")
         sys.exit(1)
 
     net.to(device)
@@ -82,7 +82,7 @@ def run_bisenet():
             if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
                 all_images.append(Path(root) / f)
 
-    logger.info(f"Found {len(all_images)} images.")
+    logger.info(f"[SEGMENTATION] Found {len(all_images)} images.")
     processed_count = 0
 
     for img_path in tqdm(all_images, desc="BiSeNet hair masks"):
@@ -106,21 +106,20 @@ def run_bisenet():
                 out_up = F.interpolate(out, size=(orig_h, orig_w),
                                        mode='bilinear', align_corners=False)
 
-                pred = out_up.argmax(1)
-                mask_bool = (pred == HAIR_CLASS_ID).squeeze(0).cpu()
-
-                mask_raw = (mask_bool.numpy().astype(np.uint8)) * 255
-                mask_final = post_process_mask(mask_raw)
+                probabilities = F.softmax(out_up, dim=1)
+                
+                mask_prob = probabilities.squeeze(0)[HAIR_CLASS_ID].cpu().numpy()
+                mask_binary = (mask_prob > 0.5).astype(np.uint8) * 255
+                mask_final = post_process_mask(mask_binary)
 
             Image.fromarray(mask_final, mode="L").save(out_path)
             processed_count += 1
 
         except Exception as e:
-            logger.error(f"Failed to process {img_path}: {e}")
+            logger.warning(f" [SEGMENTATION] Failed to process {img_path}: {e}")
             continue
 
-    logger.info(f"Segmentation finished - total masks generated: {processed_count}")
-
+    logger.info(f"[SEGMENTATION] Segmentation finished - total masks generated: {processed_count}")
 
 if __name__ == "__main__":
     run_bisenet()

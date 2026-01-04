@@ -27,8 +27,7 @@ setup_logger(
     console=True,
     file=True
 )
-
-logger = get_logger(__name__)
+logger = get_logger("hair_type_classifier")
 
 def load_config(config_path="config/config.yaml"):
     config_file = Path(config_path)
@@ -38,9 +37,9 @@ def load_config(config_path="config/config.yaml"):
         return yaml.safe_load(f)
 try:
     CONFIG = load_config()
-    logger.info("Configuration loaded successfully")
+    logger.info("[CONFIG] Configuration loaded successfully")
 except FileNotFoundError as e:
-    logger.error(e)
+    logger.error(f"[CONFIG] Error loading configuration: {e}")
     sys.exit(1)
 
 class ImageDataset(Dataset):
@@ -81,7 +80,7 @@ class ImageDataset(Dataset):
             self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
             label_type = "classes"
         
-        logger.info(f"{split.upper()} dataset: {len(self.df)} images, {len(self.classes)} {label_type} (Masking: {use_masking})")
+        logger.info(f"[DATASET] {split.upper()} dataset: {len(self.df)} images, {len(self.classes)} {label_type} (Masking: {use_masking})")
     
     def __len__(self):
         return len(self.df)
@@ -94,7 +93,7 @@ class ImageDataset(Dataset):
         img = preprocess_image(img_path, use_masking=self.use_masking, mask_dir=self.mask_dir)
         
         if img is None:
-            logger.warning(f"Failed to load image: {img_path}, using blank image.")
+            logger.warning(f"[DATASET] Failed to load image: {img_path}, using blank image.")
             img = Image.new('RGB', (224, 224), (0, 0, 0))
         
         if self.transform:
@@ -125,14 +124,14 @@ def create_dataloaders(batch_size, num_workers, use_subclass=False, use_masking=
     Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
     
     if not os.path.exists(csv_path):
-        logger.error(f"CSV file does not exist: {csv_path}. Please run the data cleaning and splitting first.")
+        logger.error(f"[DATALOADER] CSV file does not exist: {csv_path}. Please run the data cleaning and splitting first.")
         return None, None, None
     
-    logger.info(f"Loading datasets from CSV: {csv_path}")
-    logger.info(f"Using root directory: {root_dir}")
+    logger.info(f"[DATALOADER] Loading datasets from CSV: {csv_path}")
+    logger.info(f"[DATALOADER] Using root directory: {root_dir}")
     
     if parent_class:
-        logger.info(f"Applying Filter: Only parent_class {parent_class}")
+        logger.info(f"[DATALOADER] Applying Filter: Only parent_class {parent_class}")
         
     train_dataset = ImageDataset(csv_path, root_dir, 'train', transform=train_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir, parent_class=parent_class)
     val_dataset = ImageDataset(csv_path, root_dir, 'val', transform=val_test_transforms, use_subclass=use_subclass, use_masking=use_masking, mask_dir=mask_dir, parent_class=parent_class)
@@ -155,7 +154,7 @@ def create_dataloaders(batch_size, num_workers, use_subclass=False, use_masking=
         num_workers=num_workers, pin_memory=pin_memory
     )
     
-    logger.info("DataLoaders created successfully.")
+    logger.info("[DATALOADER] DataLoaders created successfully.")
     return train_loader, val_loader, test_loader
 
 
@@ -195,14 +194,14 @@ class PipelineManager:
             return
 
         if self.cleaned_dir.exists() and any(self.cleaned_dir.iterdir()):
-            logger.warning(f"Directory '{self.cleaned_dir}' exists and is not empty.")
+            logger.warning(f"[PIPELINE] Directory '{self.cleaned_dir}' exists and is not empty.")
             response = input("All content will be deleted. Do you want to continue? [y/N]: ").strip().lower()
             if response not in ("y", "yes"):
-                logger.info("Operation cancelled. Use --skip_cleaning flag to bypass this step.")
+                logger.info(f"[PIPELINE] Operation cancelled. Use --skip_cleaning flag to bypass this step.")
                 sys.exit(0)
-            logger.info(f"Deleting contents of '{self.cleaned_dir}'...")
+            logger.info(f"[PIPELINE] Deleting contents of '{self.cleaned_dir}'...")
             shutil.rmtree(self.cleaned_dir)
-            logger.info(f"Directory '{self.cleaned_dir}' is now clean and ready.")
+            logger.info(f"[PIPELINE] Directory '{self.cleaned_dir}' is now clean and ready.")
 
         self.cleaned_dir.mkdir(parents=True, exist_ok=True)
 
@@ -221,26 +220,26 @@ class PipelineManager:
     def run_stages(self):
         """Execute pipeline scripts in sequence."""
         logger.info("=" * 60)
-        logger.info("Running Full Data Pipeline")
+        logger.info("[PIPELINE] Running Full Data Pipeline")
         logger.info("=" * 60)
 
         for name, should_run, script in self.stages:
             if not should_run:
-                logger.info(f"[SKIP] Skipping: {name}")
+                logger.info(f"[PIPELINE] [SKIP] Skipping: {name}")
                 continue
 
-            logger.info(f"[STAGE] Starting: {name}")
+            logger.info(f"[PIPELINE] [START] Starting: {name}")
             result = subprocess.run([sys.executable, script], check=True)
 
             if result.returncode != 0:
-                logger.error(f"Stage failed: {name}")
+                logger.error(f"[PIPELINE] Stage failed: {name}")
                 logger.error(result.stderr)
                 raise RuntimeError(f"Stage failed: {name}")
 
-            logger.info(f"[SUCCESS] Completed: {name}")
+            logger.info(f"[PIPELINE] [SUCCESS] Completed: {name}")
 
         logger.info("=" * 60)
-        logger.info("Pipeline execution completed.")
+        logger.info("[PIPELINE] Pipeline execution completed.")
         logger.info("=" * 60)
 
 
@@ -248,18 +247,18 @@ class PipelineManager:
 def test_dataloaders(train_loader, val_loader, test_loader):
     """test DataLoaders and display statistics"""
     
-    logger.info(f"DataLoader batch counts:")
+    logger.info(f"[VERIFICATION] DataLoader batch counts:")
     logger.info(f"   Train batches: {len(train_loader)}")
     logger.info(f"   Val batches: {len(val_loader)}")
     logger.info(f"   Test batches: {len(test_loader)}")
     
-    logger.info("-" * 40)
-    logger.info("Testing batch loading...")
-    logger.info("-" * 40)
+    logger.info("=" * 60)
+    logger.info(f"[VERIFICATION] Testing batch loading...")
+    logger.info("=" * 60)
     
     # test loading one batch
     images, labels = next(iter(train_loader))
-    logger.info("Single batch loaded successfully:")
+    logger.info("[VERIFICATION]Single batch loaded successfully:")
     logger.info(f"   Batch shape: {images.shape}")
     logger.info(f"   Labels shape: {labels.shape}")
     logger.info(f"   Image range: [{images.min():.3f}, {images.max():.3f}]")
@@ -267,19 +266,19 @@ def test_dataloaders(train_loader, val_loader, test_loader):
     
     
     # class distribution
-    logger.info("-" * 40)
-    logger.info("Class distribution per split:")
-    logger.info("-" * 40)
+    logger.info("=" * 60)
+    logger.info("[VERIFICATION]Class distribution per split:")
+    logger.info("=" * 60)
     
     for split_name, loader in [("TRAIN", train_loader), ("VAL", val_loader), ("TEST", test_loader)]:
         counts = loader.dataset.get_class_counts()
         total = sum(counts.values())
-        logger.info(f"\n{split_name}:")
+        logger.info(f"\n[VERIFICATION] {split_name}:")
         for cls, count in sorted(counts.items()):
             logger.info(f"  {cls}: {count:3d} images ({count/total*100:.1f}%)")
     
     logger.info("=" * 60)
-    logger.info("All tests passed - DataLoader ready for training")
+    logger.info("[VERIFICATION]All tests passed - DataLoader ready for training")
 
 # saving sample images for verification
 def save_sample_images(dataset, output_dir, count=10, prefix="processed"):
@@ -293,9 +292,9 @@ def save_sample_images(dataset, output_dir, count=10, prefix="processed"):
     mean_tensor = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
     std_tensor = torch.tensor(IMAGENET_STD).view(3, 1, 1)
 
-    logger.info("-" * 60)
-    logger.info(f"Saving {count} sample images to: {output_path}")
-    logger.info("-" * 60)
+    logger.info("=" * 60)
+    logger.info(f"[VERIFICATION] Saving {count} sample images to: {output_path}")
+    logger.info("=" * 60)
 
     for i in tqdm(range(min(count, len(dataset))), desc=f"Saving {prefix} samples"):
         try:
@@ -314,7 +313,7 @@ def save_sample_images(dataset, output_dir, count=10, prefix="processed"):
             img_pil.save(output_path / save_name)
             
         except Exception as e:
-            logger.error(f"Failed to save sample image {i}: {e}")
+            logger.error(f"[VERIFICATION] Failed to save sample image {i}: {e}")
             continue
 
 def run_pipeline():
@@ -330,7 +329,7 @@ def run_pipeline():
     # log level setup
     main_logger = logging.getLogger("hair_type_classifier")
     main_logger.setLevel(getattr(logging, args.log_level))
-    logger.info(f"Log level set to: {args.log_level}")
+    logger.info(f"[MAIN]Log level set to: {args.log_level}")
 
     pm = PipelineManager(args)
     pm.validate_inputs()
@@ -348,7 +347,7 @@ if __name__ == "__main__":
     use_masking_conf = CONFIG['defaults'].get('use_masking', False) 
     
     logger.info("=" * 60)
-    logger.info("Creating DataLoaders...")
+    logger.info("[MAIN] Creating DataLoaders...")
     logger.info("=" * 60)
 
     try:
@@ -366,7 +365,7 @@ if __name__ == "__main__":
         # saving masked samples for visualisation
         OUTPUT_FOLDER = Path("dataset/processed_samples")
             
-        logger.info(f"Saving sample images to verify preprocessing/augmentation to {OUTPUT_FOLDER}")
+        logger.info(f"[MAIN] Saving sample images to verify preprocessing/augmentation to {OUTPUT_FOLDER}")
             
         # training samples (with augmentation)
         save_sample_images(train_loader.dataset, OUTPUT_FOLDER / "train", count=10, prefix="train_aug")  
@@ -374,8 +373,8 @@ if __name__ == "__main__":
         save_sample_images(val_loader.dataset, OUTPUT_FOLDER / "val", count=10, prefix="val_norm")
         
     except FileNotFoundError as e:
-        logger.error(str(e))
+        logger.error(f"[MAIN] File not found: {e}")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Unexpected error during DataLoader creation: {e}")
+        logger.error(f"[MAIN] Unexpected error during DataLoader creation: {e}")
         sys.exit(1)

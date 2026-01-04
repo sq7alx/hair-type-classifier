@@ -2,7 +2,7 @@ import os
 import sys
 import csv
 import random
-import yaml
+import logging
 import pandas as pd
 from pathlib import Path
 
@@ -10,9 +10,18 @@ from pathlib import Path
 # sys.path.insert(0, str(project_root))
 
 from config.config_loader import CONFIG
+from config.logging_config import get_logger, setup_logger
+
+setup_logger(
+    name="hair_type_classifier",
+    level=logging.INFO,
+    log_file="logs/data_split.log",
+    console=True,
+    file=True
+)
+logger = get_logger("hair_type_classifier")
 
 input_csv = os.path.join(CONFIG['dataset']['cleaned_output_dir'], CONFIG['dataset']['cleaned_output_csv'])
-print(input_csv)
 output_csv = CONFIG['dataset']['split_output_csv']
 splits = CONFIG['dataset']['splits']
 
@@ -21,21 +30,18 @@ random.seed(1984)
 os.makedirs(os.path.dirname(output_csv), exist_ok=True)
 
 total_splits = sum(splits.values())
-
-if total_splits != 1.0:
-    print(f"Warning! The total splits value is {total_splits:.2f}")
-    choice = input("Do you want to continue? (y/n)").lower()
-    if choice != "y":
-        print("Exited")
-        exit(1)
+if abs(total_splits - 1.0) > 1e-6:
+    logger.warning(f"[SPLIT] The total splits sum to {total_splits:.2f} (expected 1.0). Normalizing automatically.")
+    splits = {k: v/total_splits for k, v in splits.items()}
+    
 try:
     df_cleaned = pd.read_csv(input_csv)
     if df_cleaned.empty:
-        print(f"Error: Cleaned CSV file is empty: {input_csv}")
-        exit(1)
+        logger.error(f"[SPLIT] Cleaned CSV file is empty: {input_csv}")
+        sys.exit(1)
 except FileNotFoundError:
-    print(f"Error: Cleaned CSV file not found: {input_csv}")
-    exit(1)
+    logger.error(f"[SPLIT] Cleaned CSV file not found: {input_csv}")
+    sys.exit(1)
     
 rows = []
 total_rows = len(df_cleaned)
@@ -68,21 +74,18 @@ for (class_name, subclass_name), group in grouped:  # 1/2/3
         
 
 # Save CSV
-with open(output_csv, "w", newline="", encoding="utf-8") as f:
-    writer = csv.DictWriter(f, fieldnames=["class", "subclass", "filename", "split", "path"])
-    writer.writeheader()
-    writer.writerows(rows)
+df_split = pd.DataFrame(rows)
+df_split.to_csv(output_csv, index=False)
 
-print(f"Dataset split saved to {output_csv}")
-print(f"Total images: {len(rows)}")
+logger.info(f"[SPLIT] Dataset split saved to {output_csv}")
+logger.info(f"[SPLIT] Total images: {len(rows)}")
 
-split_counts = {"train": 0, "val": 0, "test": 0}
-split_parts = [splits["train"], splits["val"], splits["test"]]
-
+split_counts = {k: 0 for k in splits.keys()}
 for row in rows:
     split_counts[row["split"]] += 1
 
-print("Split statistics:")
+logger.info("[SPLIT] Split statistics:")
+total_rows = len(rows)
 for split, count in split_counts.items():
-    percent = (count / len(rows)) * 100
-    print(f"{split}: {count} ({percent:.2f}%)")
+    percent = (count / total_rows) * 100
+    logger.info(f"[SPLIT] {split}: {count} ({percent:.2f}%)")
